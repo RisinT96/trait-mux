@@ -6,12 +6,14 @@ use proc_macro2::TokenStream;
 use proc_macro_error::abort;
 use syn::parse::{Parse, ParseStream};
 use syn::punctuated::Punctuated;
+use syn::token::Comma;
 use syn::{parse2, Path, Result, Token};
 
 /// Represents the parsed Abstract Syntax Tree (AST) for a list of traits or paths.
 pub struct Ast {
-    /// A vector of parsed paths representing traits or modules.
-    pub paths: Vec<Path>,
+    /// A punctuated list of parsed paths representing traits or modules.
+    /// Each path can be a simple identifier (e.g., `Display`) or a full path (e.g., `std::fmt::Display`).
+    pub paths: Punctuated<Path, Comma>,
 }
 
 impl Parse for Ast {
@@ -26,10 +28,9 @@ impl Parse for Ast {
     /// # Errors
     /// Returns an error if the input does not match the expected syntax.
     fn parse(input: ParseStream) -> Result<Self> {
-        let traits = Punctuated::<Path, Token![,]>::parse_terminated(input)?;
-        Ok(Ast {
-            paths: traits.into_iter().collect(),
-        })
+        let paths = Punctuated::<Path, Token![,]>::parse_terminated(input)?;
+
+        Ok(Ast { paths })
     }
 }
 
