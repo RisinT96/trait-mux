@@ -1,5 +1,0 @@
-error: expected identifier
- --> tests/fail/invalid_syntax_empty_field.rs:4:16
-  |
-4 |     trait_mux!(,);
-  |                ^
