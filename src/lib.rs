@@ -1,16 +1,7 @@
-use proc_macro::TokenStream;
-use proc_macro_error::proc_macro_error;
+#![allow(dead_code, unused)]
 
-mod trait_mux;
-use crate::trait_mux::codegen;
-use crate::trait_mux::lower;
-use crate::trait_mux::parse;
+use std::fmt::{Binary, Debug, Display};
 
-#[proc_macro]
-#[proc_macro_error]
-pub fn trait_mux(ts: TokenStream) -> TokenStream {
-    let ast = parse::parse(ts.clone().into());
-    let ir = lower::lower(ast);
-    let _ = codegen::codegen(ir);
-    TokenStream::new()
-}
+pub use trait_mux_macros::trait_mux;
+
+struct Match<'t, T>(&'t T);

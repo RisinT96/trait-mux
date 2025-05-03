@@ -1,17 +1,20 @@
 [package]
 name = "trait_mux"
 version = "0.1.0"
-edition = "2021"
-authors = [ "Tal Risin <risint96@gmail.com>" ]
+edition = "2024"
+authors = ["Tal Risin <risint96@gmail.com>"]
+rust-version = "1.86.0"
 
-[lib]
-proc-macro = true
+[workspace]
+members = ["crates/trait_mux_macros"]
+package = { edition = "2024", rust-version = "1.86.0" }
 
 [dependencies]
-syn = { version = "~1.0", features = ["full"] }
-quote = "~1.0"
-proc-macro2 = "~1.0"
-proc-macro-error = "~1.0"
+trait_mux_macros = { path = "crates/trait_mux_macros", version = "0.1.0" }
 
 [dev-dependencies]
 trybuild = "~1.0"
+
+[[test]]
+name = "integration"
+path = "tests/ui.rs"
