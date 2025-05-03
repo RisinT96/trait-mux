@@ -20,28 +20,11 @@ pub struct Trait<'t> {
     pub path: &'t Path,
 }
 
-impl std::fmt::Debug for Trait<'_> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("Trait").field("ident", &self.ident).finish()
-    }
-}
-
 /// Represents an enum variant, including its identifier,
 /// match identifier, and the traits it implements.
 pub struct EnumVariant<'t> {
     pub ident: Ident,
-    pub match_ident: Ident,
     pub implemented_traits: Vec<Trait<'t>>,
-}
-
-impl std::fmt::Debug for EnumVariant<'_> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("EnumVariant")
-            .field("ident", &self.ident)
-            .field("match_ident", &self.match_ident)
-            .field("implemented_traits", &self.implemented_traits)
-            .finish()
-    }
 }
 
 /// Represents a function derived from a trait, including its identifier,
@@ -107,11 +90,9 @@ fn generate_variants<'t>(traits: &Vec<Trait<'t>>) -> Vec<EnumVariant<'t>> {
                     .map(|t| t.ident.to_string())
                     .collect::<String>()
             };
-            let variant_match_name = format!("Match{}", variant_name);
 
             EnumVariant {
                 ident: Ident::new(&variant_name, Span::call_site()),
-                match_ident: Ident::new(&variant_match_name, Span::call_site()),
                 implemented_traits: variant.to_vec(),
             }
         })
