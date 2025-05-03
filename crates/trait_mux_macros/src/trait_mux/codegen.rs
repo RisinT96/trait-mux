@@ -1,13 +1,13 @@
-use proc_macro2::{Span, TokenStream};
+use proc_macro2::TokenStream;
 use quote::quote;
 
 use crate::lower::Ir;
 
 pub fn codegen(ir: Ir) -> TokenStream {
-    let enum_ident = ir.ident;
+    let enum_ident = ir.enum_ident;
 
     let aggregate_traits = ir
-        .permutations
+        .enum_variants
         .iter()
         .map(|p| {
             let trait_ident = &p.ident;
@@ -29,7 +29,7 @@ pub fn codegen(ir: Ir) -> TokenStream {
         .collect::<Vec<_>>();
 
     let enum_fields = ir
-        .permutations
+        .enum_variants
         .iter()
         .map(|p| {
             let trait_ident = &p.ident;
@@ -50,10 +50,10 @@ pub fn codegen(ir: Ir) -> TokenStream {
         .collect::<Vec<_>>();
 
     let enum_functions = ir
-        .functions
+        .enum_impl_functions
         .iter()
         .map(|f| {
-            let ident = &f.ident;
+            let ident = &f.enum_variant;
             let result_path = &f.result_path;
             let variants = &f.variants;
 
