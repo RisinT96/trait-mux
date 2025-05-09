@@ -164,7 +164,7 @@ fn generate_enum_impl(ir: &Ir) -> TokenStream {
         fns.extend(quote! {
             pub fn #name(&self) -> ::core::option::Option<&dyn #result_path> {
                 match self {
-                    #(#enum_name::#matching_variants (v) => Some(v),)*
+                    #(#enum_name::#matching_variants (v) => Some(*v),)*
                     _ => None,
                 }
             }
@@ -434,15 +434,15 @@ mod tests {
             impl<'t> Dispatcher<'t> {
                 pub fn as_debug(&self) -> ::core::option::Option<&dyn std::fmt::Debug> {
                     match self {
-                        Dispatcher::Debug(v) => Some(v),
-                        Dispatcher::DebugDisplay(v) => Some(v),
+                        Dispatcher::Debug(v) => Some(*v),
+                        Dispatcher::DebugDisplay(v) => Some(*v),
                         _ => None,
                     }
                 }
                 pub fn as_display(&self) -> ::core::option::Option<&dyn std::fmt::Display> {
                     match self {
-                        Dispatcher::Display(v) => Some(v),
-                        Dispatcher::DebugDisplay(v) => Some(v),
+                        Dispatcher::Display(v) => Some(*v),
+                        Dispatcher::DebugDisplay(v) => Some(*v),
                         _ => None,
                     }
                 }
