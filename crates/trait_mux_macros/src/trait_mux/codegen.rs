@@ -1,10 +1,7 @@
-use proc_macro::Ident;
-use proc_macro2::{Span, TokenStream};
+use proc_macro2::TokenStream;
 use quote::quote;
 
-use crate::lower::Ir;
-
-use super::lower::{AutorefSpecializer, Constraint, EnumVariant, Function, TraitAggregate};
+use crate::lower::{AutorefSpecializer, Constraint, EnumVariant, Function, Ir, TraitAggregate};
 
 fn refs(n: usize) -> TokenStream {
     let mut refs = TokenStream::new();

@@ -104,7 +104,7 @@ fn generate_trait_aggregates<'t>(model: &'t Model<'t>) -> Vec<TraitAggregate<'t>
             }
 
             let variant_ident = &v.ident;
-            let sub_traits = v.implemented_traits.iter().map(|t| t).collect::<Vec<_>>();
+            let sub_traits = v.implemented_traits.iter().collect();
 
             Some(TraitAggregate {
                 name: variant_ident,
@@ -180,8 +180,8 @@ fn generate_autoref_specializers<'t>(model: &'t Model<'t>) -> Vec<AutorefSpecial
         .enum_variants
         .iter()
         .map(|v| {
-            let tag = Ident::new(&format!("{}Tag", v.ident.to_string()), Span::call_site());
-            let r#match = Ident::new(&format!("{}Match", v.ident.to_string()), Span::call_site());
+            let tag = Ident::new(&format!("{}Tag", v.ident), Span::call_site());
+            let r#match = Ident::new(&format!("{}Match", v.ident), Span::call_site());
             let deref_count = v.implemented_traits.len();
             let constraint = enum_variant_to_constraint(v);
 
