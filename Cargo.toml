@@ -1,20 +1,14 @@
-[package]
-name = "trait_mux"
-version = "0.1.0"
-edition = "2024"
-authors = ["Tal Risin <risint96@gmail.com>"]
-rust-version = "1.86.0"
-
 [workspace]
-members = ["crates/trait_mux_macros"]
-package = { edition = "2024", rust-version = "1.86.0" }
+resolver = "2"
+members = ["trait_mux", "trait_mux_macros"]
 
-[dependencies]
-trait_mux_macros = { path = "crates/trait_mux_macros", version = "0.1.0" }
-
-[dev-dependencies]
-trybuild = "~1.0"
-
-[[test]]
-name = "integration"
-path = "tests/ui.rs"
+[workspace.package]
+authors = ["Tal Risin <tal@risin.dev>"]
+description = "Proc macro library for generating enums that can multiplex different trait objects"
+edition = "2024"
+keywords = ["trait", "multiplex", "mux"]
+license = "MIT"
+readme = "README.md"
+repository = "https://github.com/RisinT96/trait-mux"
+rust-version = "1.86.0"
+version = "0.1.0"

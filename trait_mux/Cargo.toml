@@ -1,0 +1,21 @@
+[package]
+authors.workspace = true
+description.workspace = true
+edition.workspace = true
+keywords.workspace = true
+license.workspace = true
+name = "trait_mux"
+readme.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+version.workspace = true
+
+[dependencies]
+trait_mux_macros = { path = "../trait_mux_macros", version = "0.1.0" }
+
+[dev-dependencies]
+trybuild = "~1.0"
+
+[[test]]
+name = "integration"
+path = "tests/ui.rs"
