@@ -1,7 +1,9 @@
+#![allow(unused_macros)]
+
+use std::fmt;
 use std::fmt::Binary;
 use trait_mux::trait_mux;
 
-fn main() {
-    trait_mux!(MyEnum {});
-    trait_mux!(MyEnum2{std::fmt::Debug, Binary, Display});
-}
+trait_mux!(MyEnum{std::fmt::Debug, Binary, fmt::Display});
+
+fn main() {}

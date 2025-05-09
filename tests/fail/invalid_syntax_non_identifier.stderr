@@ -1,5 +1,5 @@
 error: expected identifier
- --> tests/fail/invalid_syntax_non_identifier.rs:4:16
+ --> tests/fail/invalid_syntax_non_identifier.rs:3:12
   |
-4 |     trait_mux!(123);
-  |                ^^^
+3 | trait_mux!(123);
+  |            ^^^

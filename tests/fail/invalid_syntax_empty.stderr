@@ -1,7 +1,7 @@
 error: unexpected end of input, expected identifier
- --> tests/fail/invalid_syntax_empty.rs:4:5
+ --> tests/fail/invalid_syntax_empty.rs:3:1
   |
-4 |     trait_mux!();
-  |     ^^^^^^^^^^^^
+3 | trait_mux!();
+  | ^^^^^^^^^^^^
   |
   = note: this error originates in the macro `trait_mux` (in Nightly builds, run with -Z macro-backtrace for more info)

@@ -1,5 +1,5 @@
 use trait_mux::trait_mux;
 
-fn main() {
-    trait_mux!(123);
-}
+trait_mux!(123);
+
+fn main() {}
