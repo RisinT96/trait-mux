@@ -1,151 +1,197 @@
 use convert_case::{Case, Casing};
 
 use proc_macro2::{Ident, Span};
-use syn::{Path, spanned::Spanned};
+use syn::Path;
 
-use crate::parse::Ast;
+use super::analyze::{self, Model, Trait};
 
-/// Intermediate representation (IR) of the parsed AST.
-/// Contains the identifier, enum variants, and functions derived from the AST.
-pub struct Ir<'t> {
-    pub enum_ident: &'t Ident,
-    pub enum_variants: Vec<EnumVariant<'t>>,
-    pub enum_impl_functions: Vec<Function<'t>>,
+pub struct TraitAggregate<'t> {
+    pub name: &'t Ident,
+    pub traits: Vec<&'t Trait<'t>>,
 }
 
-/// Represents a trait with its identifier and path.
-#[derive(Copy, Clone)]
-pub struct Trait<'t> {
-    pub ident: &'t Ident,
-    pub path: &'t Path,
-}
-
-/// Represents an enum variant, including its identifier,
-/// match identifier, and the traits it implements.
 pub struct EnumVariant<'t> {
-    pub ident: Ident,
-    pub implemented_traits: Vec<Trait<'t>>,
+    /// The enum ident, used both for the enum variant name, and (if needed) for the trait aggregate
+    /// name.
+    /// e.g. `BinaryDebugDisplay`
+    pub ident: &'t Ident,
+    pub constraint: Constraint<'t>,
+}
+
+pub struct Enum<'t> {
+    pub name: &'t Ident,
+    pub variants: Vec<EnumVariant<'t>>,
 }
 
 /// Represents a function derived from a trait, including its identifier,
 /// result path, and the variants it applies to.
 pub struct Function<'t> {
-    pub enum_variant: Ident,
+    pub name: Ident,
     pub result_path: &'t Path,
-    pub variants: Vec<Ident>,
+    pub matching_variants: Vec<&'t Ident>,
 }
 
-/// Extracts traits from the given AST.
-/// Emits an error if a path is empty or malformed.
-fn extract_traits(ast: &Ast) -> Vec<Trait> {
-    let mut traits = vec![];
-
-    for path in &ast.paths {
-        if path.segments.is_empty() {
-            proc_macro_error::emit_error!(
-                path.span(),
-                "unexpected end of input, expected identifier"
-            );
-        }
-
-        // Unwrap safety: checked that segments is not empty.
-        traits.push(Trait {
-            ident: &path.segments.last().unwrap().ident,
-            path,
-        });
-    }
-
-    // Sort traits alphabetically by their identifier.
-    traits.sort_by_key(|t| t.ident.to_string());
-    traits
+pub struct EnumImpl<'t> {
+    pub functions: Vec<Function<'t>>,
 }
 
-/// Generates all possible enum variants from the given traits.
-/// The variants are sorted by descending length and then alphabetically.
-fn generate_variants<'t>(traits: &Vec<Trait<'t>>) -> Vec<EnumVariant<'t>> {
-    let mut permutations = Vec::new();
-    let n = traits.len();
-
-    // Create all possible permutations of the trait names.
-    // We have 2^n possible permutations.
-    for i in 0..(1 << n) {
-        let mut permutation = vec![];
-
-        for (j, r#trait) in traits.iter().enumerate() {
-            if (i & (1 << j)) != 0 {
-                permutation.push(*r#trait);
-            }
-        }
-        permutations.push(permutation);
-    }
-
-    let mut variants = permutations
-        .iter()
-        .map(|variant| {
-            let variant_name = if variant.is_empty() {
-                "None".to_string()
-            } else {
-                variant
-                    .iter()
-                    .map(|t| t.ident.to_string())
-                    .collect::<String>()
-            };
-
-            EnumVariant {
-                ident: Ident::new(&variant_name, Span::call_site()),
-                implemented_traits: variant.to_vec(),
-            }
-        })
-        .collect::<Vec<_>>();
-
-    // Sort by the length of implemented traits, then alphabetically.
-    variants.sort_by_key(|e| format!("{} {}", e.implemented_traits.len(), e.ident));
-    variants.reverse();
-
-    variants
+pub enum Constraint<'t> {
+    None,
+    Path(&'t Path),
+    Ident(&'t Ident),
 }
 
-/// Generates functions for each trait, mapping them to the enum variants
-/// that implement the trait.
-pub fn generate_enum_impl_functions<'t, 'p>(
-    traits: &'p [Trait<'t>],
-    variants: &'p [EnumVariant<'t>],
-) -> Vec<Function<'t>> {
-    traits
-        .iter()
-        .map(|t| {
-            let name = format!("try_as_{}", t.ident.to_string().to_case(Case::Snake));
+pub struct AutorefSpecializer<'t> {
+    pub tag: Ident,
+    pub r#match: Ident,
+    pub deref_count: usize,
+    pub variant: &'t Ident,
+    pub constraint: Constraint<'t>,
+}
 
-            // Find all enum variants that implement the trait `t`.
-            let variants = variants
-                .iter()
-                .filter(|p| {
-                    p.implemented_traits
-                        .iter()
-                        .any(|it| core::ptr::eq(it.path, t.path))
-                })
-                .map(|p| p.ident.clone())
-                .collect();
-
-            Function {
-                enum_variant: Ident::new(&name, Span::call_site()),
-                result_path: t.path,
-                variants,
-            }
-        })
-        .collect()
+/// Intermediate representation (IR) of the parsed AST.
+/// Contains the identifier, enum variants, and functions derived from the AST.
+pub struct Ir<'t> {
+    pub trait_aggregates: Vec<TraitAggregate<'t>>,
+    pub r#enum: Enum<'t>,
+    pub enum_impl: EnumImpl<'t>,
+    pub autoref_specializers: Vec<AutorefSpecializer<'t>>,
+    pub wrap_ident: &'t Ident,
+    pub wrap_derefs: usize,
+    pub into: Ident,
+    pub into_tag: Ident,
 }
 
 /// Converts the given AST into its intermediate representation (IR).
 /// This includes extracting traits, generating enum variants, and creating functions.
-pub fn lower(ast: &Ast) -> Ir {
-    let traits = extract_traits(ast);
-    let variants = generate_variants(&traits);
-    let enum_impl_functions = generate_enum_impl_functions(&traits, &variants);
+pub fn lower<'t>(model: &'t Model<'t>) -> Ir<'t> {
+    let trait_aggregates = generate_trait_aggregates(model);
+    let r#enum = generate_enum(model);
+    let enum_impl = generate_enum_impl(model);
+    let autoref_specializers = generate_autoref_specializers(model);
+
+    let into_tag = Ident::new(
+        &format!(
+            "into_{}_tag",
+            model.enum_ident.to_string().to_case(Case::Snake)
+        ),
+        Span::call_site(),
+    );
+    let into = Ident::new(
+        &format!("into_{}", model.enum_ident.to_string().to_case(Case::Snake)),
+        Span::call_site(),
+    );
 
     Ir {
-        enum_ident: &ast.name,
-        enum_variants: variants,
-        enum_impl_functions,
+        trait_aggregates,
+        r#enum,
+        enum_impl,
+        autoref_specializers,
+        wrap_ident: &model.wrap_ident,
+        wrap_derefs: model.traits.len() + 1,
+        into_tag,
+        into,
     }
+}
+
+fn generate_trait_aggregates<'t>(model: &'t Model<'t>) -> Vec<TraitAggregate<'t>> {
+    model
+        .enum_variants
+        .iter()
+        .filter_map(|v| {
+            if v.implemented_traits.len() <= 1 {
+                return None;
+            }
+
+            let variant_ident = &v.ident;
+            let sub_traits = v.implemented_traits.iter().map(|t| t).collect::<Vec<_>>();
+
+            Some(TraitAggregate {
+                name: variant_ident,
+                traits: sub_traits,
+            })
+        })
+        .collect()
+}
+
+fn enum_variant_to_constraint<'t>(v: &'t analyze::EnumVariant<'t>) -> Constraint<'t> {
+    match v.implemented_traits.len() {
+        0 => Constraint::None,
+        1 => Constraint::Path(v.implemented_traits[0].path),
+        _ => Constraint::Ident(&v.ident),
+    }
+}
+
+fn generate_enum<'t>(model: &'t Model<'t>) -> Enum<'t> {
+    let name = model.enum_ident;
+    let variants = model
+        .enum_variants
+        .iter()
+        .map(|v| {
+            let constraint = enum_variant_to_constraint(v);
+
+            EnumVariant {
+                ident: &v.ident,
+                constraint,
+            }
+        })
+        .collect();
+
+    Enum { name, variants }
+}
+
+/// Generates functions for each trait, mapping them to the enum variants
+/// that implement the trait.
+fn generate_enum_impl<'t>(model: &'t Model<'t>) -> EnumImpl<'t> {
+    let functions = model
+        .traits
+        .iter()
+        .map(|current_trait| {
+            let fn_name = format!(
+                "try_as_{}",
+                current_trait.ident.to_string().to_case(Case::Snake)
+            );
+
+            // Find all enum variants that implement the current trait.
+            let matching_variants = model
+                .enum_variants
+                .iter()
+                .filter(|v| {
+                    v.implemented_traits.iter().any(|implemented_trait| {
+                        core::ptr::eq(implemented_trait.path, current_trait.path)
+                    })
+                })
+                .map(|p| &p.ident)
+                .collect();
+
+            Function {
+                name: Ident::new(&fn_name, Span::call_site()),
+                result_path: current_trait.path,
+                matching_variants,
+            }
+        })
+        .collect();
+
+    EnumImpl { functions }
+}
+
+fn generate_autoref_specializers<'t>(model: &'t Model<'t>) -> Vec<AutorefSpecializer<'t>> {
+    model
+        .enum_variants
+        .iter()
+        .map(|v| {
+            let tag = Ident::new(&format!("{}Tag", v.ident.to_string()), Span::call_site());
+            let r#match = Ident::new(&format!("{}Match", v.ident.to_string()), Span::call_site());
+            let deref_count = v.implemented_traits.len();
+            let constraint = enum_variant_to_constraint(v);
+
+            AutorefSpecializer {
+                tag,
+                r#match,
+                deref_count,
+                variant: &v.ident,
+                constraint,
+            }
+        })
+        .collect()
 }
