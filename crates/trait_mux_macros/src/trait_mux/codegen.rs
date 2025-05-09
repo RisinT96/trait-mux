@@ -228,10 +228,10 @@ fn generate_autoref_specializers(ir: &Ir) -> TokenStream {
                     }
 
                     pub trait #r#match<T> {
-                        pub fn #into_tag(&self) -> #tag;
+                        fn #into_tag(&self) -> #tag;
                     }
                     impl<'t, T #t_constraint> #r#match<T> for #refs #wrap<'t,T> {
-                        pub fn #into_tag(&self) -> #tag {
+                        fn #into_tag(&self) -> #tag {
                             #tag
                         }
                     }
@@ -499,17 +499,17 @@ mod tests {
         let expected_traits = vec![
             quote! {
                 pub trait DebugDisplayMatch<T> {
-                    pub fn into_tag(&self) -> DebugDisplayTag;
+                    fn into_tag(&self) -> DebugDisplayTag;
                 }
             },
             quote! {
                 pub trait DebugMatch<T> {
-                    pub fn into_tag(&self) -> DebugTag;
+                    fn into_tag(&self) -> DebugTag;
                 }
             },
             quote! {
                 pub trait DisplayMatch<T> {
-                    pub fn into_tag(&self) -> DisplayTag;
+                    fn into_tag(&self) -> DisplayTag;
                 }
             },
         ];
@@ -517,21 +517,21 @@ mod tests {
         let expected_trait_impls: Vec<TokenStream> = vec![
             quote! {
                 impl<'t, T: DebugDisplay> DebugDisplayMatch<T> for & & Wrap<'t,T> {
-                    pub fn into_tag(&self) -> DebugDisplayTag {
+                    fn into_tag(&self) -> DebugDisplayTag {
                         DebugDisplayTag
                     }
                 }
             },
             quote! {
                 impl<'t, T: std::fmt::Debug> DebugMatch<T> for & Wrap<'t,T> {
-                    pub fn into_tag(&self) -> DebugTag {
+                    fn into_tag(&self) -> DebugTag {
                         DebugTag
                     }
                 }
             },
             quote! {
                 impl<'t, T: std::fmt::Display> DisplayMatch<T> for & Wrap<'t,T> {
-                    pub fn into_tag(&self) -> DisplayTag {
+                    fn into_tag(&self) -> DisplayTag {
                         DisplayTag
                     }
                 }
