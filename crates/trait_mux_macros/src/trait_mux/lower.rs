@@ -282,3 +282,244 @@ fn generate_autoref_specializers<'t>(model: &'t Model<'t>) -> Vec<AutorefSpecial
         })
         .collect()
 }
+
+#[cfg(test)]
+mod tests {
+    use std::collections::HashMap;
+
+    use super::analyze::EnumVariant as AnalyzedEnumVariant;
+    use super::*;
+    use syn::parse_quote;
+
+    fn create_idents() -> HashMap<&'static str, (Ident, Path)> {
+        let mut res = HashMap::new();
+
+        res.insert(
+            "Debug",
+            (
+                Ident::new("Debug", Span::call_site()),
+                parse_quote!(std::fmt::Debug),
+            ),
+        );
+        res.insert(
+            "Display",
+            (
+                Ident::new("Display", Span::call_site()),
+                parse_quote!(fmt::Display),
+            ),
+        );
+        res.insert(
+            "Pointer",
+            (
+                Ident::new("Pointer", Span::call_site()),
+                parse_quote!(Pointer),
+            ),
+        );
+
+        res
+    }
+
+    fn create_test_model<'t>(
+        enum_ident: &'t Ident,
+        map: &'t HashMap<&'static str, (Ident, Path)>,
+    ) -> Model<'t> {
+        let debug_trait = Trait {
+            ident: &map["Debug"].0,
+            path: &map["Debug"].1,
+        };
+
+        let display_trait = Trait {
+            ident: &map["Display"].0,
+            path: &map["Display"].1,
+        };
+
+        let pointer_trait = Trait {
+            ident: &map["Pointer"].0,
+            path: &map["Pointer"].1,
+        };
+
+        let no_trait_variant = AnalyzedEnumVariant {
+            ident: Ident::new("NoTraits", Span::call_site()),
+            implemented_traits: vec![],
+        };
+
+        let debug_variant = AnalyzedEnumVariant {
+            ident: Ident::new("DebugOnly", Span::call_site()),
+            implemented_traits: vec![debug_trait],
+        };
+
+        let debug_display_variant = AnalyzedEnumVariant {
+            ident: Ident::new("DebugAndDisplay", Span::call_site()),
+            implemented_traits: vec![debug_trait, display_trait],
+        };
+
+        let all_traits_variant = AnalyzedEnumVariant {
+            ident: Ident::new("AllTraits", Span::call_site()),
+            implemented_traits: vec![debug_trait, display_trait, pointer_trait],
+        };
+
+        Model {
+            enum_ident,
+            wrap_ident: Ident::new("test_wrap", Span::call_site()),
+            traits: vec![debug_trait, display_trait, pointer_trait],
+            enum_variants: vec![
+                debug_variant,
+                debug_display_variant,
+                all_traits_variant,
+                no_trait_variant,
+            ],
+        }
+    }
+
+    #[test]
+    fn test_generate_trait_aggregates() {
+        let enum_ident = Ident::new("TestEnum", Span::call_site());
+        let traits = create_idents();
+        let model = create_test_model(&enum_ident, &traits);
+
+        let aggregates = generate_trait_aggregates(&model);
+
+        assert_eq!(aggregates.len(), 2); // Should have 2 aggregates (DebugAndDisplay, AllTraits)
+
+        let debug_display_aggregate = aggregates
+            .iter()
+            .find(|a| a.name.to_string() == "DebugAndDisplay")
+            .unwrap();
+        assert_eq!(debug_display_aggregate.traits.len(), 2);
+        assert_eq!(debug_display_aggregate.traits[0].ident.to_string(), "Debug");
+        assert_eq!(
+            debug_display_aggregate.traits[1].ident.to_string(),
+            "Display"
+        );
+
+        let all_traits_aggregate = aggregates
+            .iter()
+            .find(|a| a.name.to_string() == "AllTraits")
+            .unwrap();
+        assert_eq!(all_traits_aggregate.traits.len(), 3);
+    }
+
+    #[test]
+    fn test_generate_enum() {
+        let enum_ident = Ident::new("TestEnum", Span::call_site());
+        let traits = create_idents();
+        let model = create_test_model(&enum_ident, &traits);
+
+        let enum_ir = generate_enum(&model);
+
+        assert_eq!(enum_ir.name.to_string(), "TestEnum");
+        assert_eq!(enum_ir.variants.len(), 4);
+
+        // Check constraints
+        let debug_variant = enum_ir
+            .variants
+            .iter()
+            .find(|v| v.ident.to_string() == "DebugOnly")
+            .unwrap();
+        match &debug_variant.constraint {
+            Constraint::Path(path) => {
+                let path_str = quote::quote! { #path }.to_string();
+                assert!(path_str.contains("Debug"));
+            }
+            _ => panic!("Expected Path constraint for DebugOnly variant"),
+        }
+
+        let no_trait_variant = enum_ir
+            .variants
+            .iter()
+            .find(|v| v.ident.to_string() == "NoTraits")
+            .unwrap();
+        match &no_trait_variant.constraint {
+            Constraint::None => {}
+            _ => panic!("Expected None constraint for NoTraits variant"),
+        }
+
+        let multi_trait_variant = enum_ir
+            .variants
+            .iter()
+            .find(|v| v.ident.to_string() == "DebugAndDisplay")
+            .unwrap();
+        match &multi_trait_variant.constraint {
+            Constraint::Ident(ident) => {
+                assert_eq!(ident.to_string(), "DebugAndDisplay");
+            }
+            _ => panic!("Expected Ident constraint for DebugAndDisplay variant"),
+        }
+    }
+
+    #[test]
+    fn test_generate_enum_impl() {
+        let enum_ident = Ident::new("TestEnum", Span::call_site());
+        let traits = create_idents();
+        let model = create_test_model(&enum_ident, &traits);
+
+        let enum_impl = generate_enum_impl(&model);
+
+        assert_eq!(enum_impl.functions.len(), 3); // One for each trait
+
+        let debug_fn = enum_impl
+            .functions
+            .iter()
+            .find(|f| f.name == "try_as_debug")
+            .unwrap();
+        assert_eq!(debug_fn.matching_variants.len(), 3); // DebugOnly, DebugAndDisplay, AllTraits
+
+        let display_fn = enum_impl
+            .functions
+            .iter()
+            .find(|f| f.name == "try_as_display")
+            .unwrap();
+        assert_eq!(display_fn.matching_variants.len(), 2); // DebugAndDisplay, AllTraits
+
+        let serialize_fn = enum_impl
+            .functions
+            .iter()
+            .find(|f| f.name == "try_as_pointer")
+            .unwrap();
+        assert_eq!(serialize_fn.matching_variants.len(), 1); // AllTraits
+    }
+
+    #[test]
+    fn test_generate_autoref_specializers() {
+        let enum_ident = Ident::new("TestEnum", Span::call_site());
+        let traits = create_idents();
+        let model = create_test_model(&enum_ident, &traits);
+
+        let specializers = generate_autoref_specializers(&model);
+
+        assert_eq!(specializers.len(), 4); // One for each variant
+
+        let debug_only_specializer = specializers
+            .iter()
+            .find(|s| s.variant.to_string() == "DebugOnly")
+            .unwrap();
+        assert_eq!(debug_only_specializer.deref_count, 1);
+        assert_eq!(debug_only_specializer.tag.to_string(), "DebugOnlyTag");
+        assert_eq!(debug_only_specializer.r#match.to_string(), "DebugOnlyMatch");
+
+        let all_traits_specializer = specializers
+            .iter()
+            .find(|s| s.variant.to_string() == "AllTraits")
+            .unwrap();
+        assert_eq!(all_traits_specializer.deref_count, 3);
+    }
+
+    #[test]
+    fn test_lower() {
+        let enum_ident = Ident::new("TestEnum", Span::call_site());
+        let traits = create_idents();
+        let model = create_test_model(&enum_ident, &traits);
+
+        let ir = lower(&model);
+
+        assert_eq!(ir.trait_aggregates.len(), 2);
+        assert_eq!(ir.r#enum.variants.len(), 4);
+        assert_eq!(ir.enum_impl.functions.len(), 3);
+        assert_eq!(ir.autoref_specializers.len(), 4);
+
+        assert_eq!(ir.wrap_ident.to_string(), "test_wrap");
+        assert_eq!(ir.wrap_derefs, 4); // traits.len() + 1
+        assert_eq!(ir.into.to_string(), "into_test_enum");
+        assert_eq!(ir.into_tag.to_string(), "into_test_enum_tag");
+    }
+}

@@ -228,10 +228,10 @@ fn generate_autoref_specializers(ir: &Ir) -> TokenStream {
                     }
 
                     pub trait #r#match<T> {
-                        fn #into_tag(&self) -> #tag;
+                        pub fn #into_tag(&self) -> #tag;
                     }
                     impl<'t, T #t_constraint> #r#match<T> for #refs #wrap<'t,T> {
-                        fn #into_tag(&self) -> #tag {
+                        pub fn #into_tag(&self) -> #tag {
                             #tag
                         }
                     }
@@ -241,4 +241,339 @@ fn generate_autoref_specializers(ir: &Ir) -> TokenStream {
         .count();
 
     autoref_specializers
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::HashMap;
+
+    use crate::trait_mux::analyze::Trait;
+
+    use super::*;
+    use proc_macro2::Span;
+    use syn::{Ident, Path, parse_quote};
+
+    fn create_idents() -> HashMap<&'static str, Ident> {
+        let mut res = HashMap::new();
+
+        res.insert("Wrap", Ident::new("Wrap", Span::call_site()));
+        res.insert("into", Ident::new("into", Span::call_site()));
+        res.insert("Combined", Ident::new("Combined", Span::call_site()));
+        res.insert("Dispatcher", Ident::new("Dispatcher", Span::call_site()));
+        res.insert("Debug", Ident::new("Debug", Span::call_site()));
+        res.insert("Display", Ident::new("Display", Span::call_site()));
+        res.insert(
+            "DebugDisplay",
+            Ident::new("DebugDisplay", Span::call_site()),
+        );
+
+        res
+    }
+
+    fn create_paths() -> HashMap<&'static str, Path> {
+        let mut res = HashMap::new();
+
+        res.insert("std::fmt::Debug", parse_quote!(std::fmt::Debug));
+        res.insert("std::fmt::Display", parse_quote!(std::fmt::Display));
+
+        res
+    }
+
+    fn create_traits<'t>(
+        idents: &'t HashMap<&'static str, Path>,
+    ) -> HashMap<&'static str, Trait<'t>> {
+        idents
+            .iter()
+            .map(|(&k, v)| {
+                (
+                    k,
+                    Trait {
+                        ident: &v.segments.last().unwrap().ident,
+                        path: v,
+                    },
+                )
+            })
+            .collect()
+    }
+
+    // Helper function to create a simple IR for testing
+    fn create_test_ir<'t>(
+        idents: &'t HashMap<&str, Ident>,
+        paths: &'t HashMap<&str, Path>,
+        traits: &'t HashMap<&str, Trait<'t>>,
+    ) -> Ir<'t> {
+        Ir {
+            wrap_ident: &idents["Wrap"],
+            wrap_derefs: 1,
+            into: Ident::new("into", Span::call_site()),
+            into_tag: Ident::new("into_tag", Span::call_site()),
+            trait_aggregates: vec![TraitAggregate {
+                name: &idents["Combined"],
+                traits: vec![&traits["std::fmt::Debug"], &traits["std::fmt::Display"]],
+            }],
+            r#enum: crate::lower::Enum {
+                name: &idents["Dispatcher"],
+                variants: vec![
+                    EnumVariant {
+                        ident: &idents["Debug"],
+                        constraint: Constraint::Path(&paths["std::fmt::Debug"]),
+                    },
+                    EnumVariant {
+                        ident: &idents["Display"],
+                        constraint: Constraint::Path(&paths["std::fmt::Display"]),
+                    },
+                    EnumVariant {
+                        ident: &idents["DebugDisplay"],
+                        constraint: Constraint::Ident(&idents["DebugDisplay"]),
+                    },
+                ],
+            },
+            enum_impl: crate::lower::EnumImpl {
+                functions: vec![
+                    Function {
+                        name: Ident::new("as_debug", Span::call_site()),
+                        result_path: &paths["std::fmt::Debug"],
+                        matching_variants: vec![&idents["Debug"], &idents["DebugDisplay"]],
+                    },
+                    Function {
+                        name: Ident::new("as_display", Span::call_site()),
+                        result_path: &paths["std::fmt::Display"],
+                        matching_variants: vec![&idents["Display"], &idents["DebugDisplay"]],
+                    },
+                ],
+            },
+            autoref_specializers: vec![
+                AutorefSpecializer {
+                    tag: Ident::new("DebugDisplayTag", Span::call_site()),
+                    r#match: Ident::new("DebugDisplayMatch", Span::call_site()),
+                    deref_count: 2,
+                    variant: &idents["DebugDisplay"],
+                    constraint: Constraint::Ident(&idents["DebugDisplay"]),
+                },
+                AutorefSpecializer {
+                    tag: Ident::new("DebugTag", Span::call_site()),
+                    r#match: Ident::new("DebugMatch", Span::call_site()),
+                    deref_count: 1,
+                    variant: &idents["Debug"],
+                    constraint: Constraint::Path(&paths["std::fmt::Debug"]),
+                },
+                AutorefSpecializer {
+                    tag: Ident::new("DisplayTag", Span::call_site()),
+                    r#match: Ident::new("DisplayMatch", Span::call_site()),
+                    deref_count: 1,
+                    variant: &idents["Display"],
+                    constraint: Constraint::Path(&paths["std::fmt::Display"]),
+                },
+            ],
+        }
+    }
+
+    #[test]
+    fn test_refs() {
+        let result = refs(3);
+        let expected = quote!(& & &);
+        assert_eq!(result.to_string(), expected.to_string());
+    }
+
+    #[test]
+    fn test_generate_wrap() {
+        let idents = create_idents();
+        let paths = create_paths();
+        let traits = create_traits(&paths);
+        let ir = create_test_ir(&idents, &paths, &traits);
+
+        let result = generate_wrap(&ir);
+        let expected = quote! {
+            pub struct Wrap<'t, T>(pub &'t T);
+        };
+        assert_eq!(result.to_string(), expected.to_string());
+    }
+
+    #[test]
+    fn test_generate_trait_aggregates() {
+        let idents = create_idents();
+        let paths = create_paths();
+        let traits = create_traits(&paths);
+        let ir = create_test_ir(&idents, &paths, &traits);
+
+        let result = generate_trait_aggregates(&ir);
+        let expected = quote! {
+            pub trait Combined: std::fmt::Debug + std::fmt::Display {}
+            impl<T: std::fmt::Debug + std::fmt::Display> Combined for T {}
+        };
+        assert_eq!(result.to_string(), expected.to_string());
+    }
+
+    #[test]
+    fn test_generate_enum() {
+        let idents = create_idents();
+        let paths = create_paths();
+        let traits = create_traits(&paths);
+        let ir = create_test_ir(&idents, &paths, &traits);
+
+        let result = generate_enum(&ir);
+        let expected = quote! {
+            pub enum Dispatcher<'t> {
+                Debug (&'t dyn std::fmt::Debug),
+                Display (&'t dyn std::fmt::Display),
+                DebugDisplay (&'t dyn DebugDisplay),
+            }
+        };
+        assert_eq!(result.to_string(), expected.to_string());
+    }
+
+    #[test]
+    fn test_generate_enum_impl() {
+        let idents = create_idents();
+        let paths = create_paths();
+        let traits = create_traits(&paths);
+        let ir = create_test_ir(&idents, &paths, &traits);
+
+        let result = generate_enum_impl(&ir);
+        let expected = quote! {
+            impl<'t> Dispatcher<'t> {
+                pub fn as_debug(&self) -> ::core::option::Option<&dyn std::fmt::Debug> {
+                    match self {
+                        Dispatcher::Debug(v) => Some(v),
+                        Dispatcher::DebugDisplay(v) => Some(v),
+                        _ => None,
+                    }
+                }
+                pub fn as_display(&self) -> ::core::option::Option<&dyn std::fmt::Display> {
+                    match self {
+                        Dispatcher::Display(v) => Some(v),
+                        Dispatcher::DebugDisplay(v) => Some(v),
+                        _ => None,
+                    }
+                }
+            }
+        };
+        assert_eq!(result.to_string(), expected.to_string());
+    }
+
+    #[test]
+    fn test_generate_autoref_specializers() {
+        let idents = create_idents();
+        let paths = create_paths();
+        let traits = create_traits(&paths);
+        let ir = create_test_ir(&idents, &paths, &traits);
+
+        let result = generate_autoref_specializers(&ir);
+
+        let expected_structs = vec![
+            quote! {
+                pub struct DebugDisplayTag;
+            },
+            quote! {
+                pub struct DebugTag;
+            },
+            quote! {
+                pub struct DisplayTag;
+            },
+        ];
+
+        let expected_struct_impls = vec![
+            quote! {
+                impl DebugDisplayTag {
+                    pub fn into<T: DebugDisplay>(self, v: &T) -> Dispatcher {
+                        Dispatcher::DebugDisplay(v)
+                    }
+                }
+            },
+            quote! {
+                impl DebugTag {
+                    pub fn into<T: std::fmt::Debug>(self, v: &T) -> Dispatcher {
+                        Dispatcher::Debug(v)
+                    }
+                }
+            },
+            quote! {
+                impl DisplayTag {
+                    pub fn into<T: std::fmt::Display>(self, v: &T) -> Dispatcher {
+                        Dispatcher::Display(v)
+                    }
+                }
+            },
+        ];
+
+        let expected_traits = vec![
+            quote! {
+                pub trait DebugDisplayMatch<T> {
+                    pub fn into_tag(&self) -> DebugDisplayTag;
+                }
+            },
+            quote! {
+                pub trait DebugMatch<T> {
+                    pub fn into_tag(&self) -> DebugTag;
+                }
+            },
+            quote! {
+                pub trait DisplayMatch<T> {
+                    pub fn into_tag(&self) -> DisplayTag;
+                }
+            },
+        ];
+
+        let expected_trait_impls: Vec<TokenStream> = vec![
+            quote! {
+                impl<'t, T: DebugDisplay> DebugDisplayMatch<T> for & & Wrap<'t,T> {
+                    pub fn into_tag(&self) -> DebugDisplayTag {
+                        DebugDisplayTag
+                    }
+                }
+            },
+            quote! {
+                impl<'t, T: std::fmt::Debug> DebugMatch<T> for & Wrap<'t,T> {
+                    pub fn into_tag(&self) -> DebugTag {
+                        DebugTag
+                    }
+                }
+            },
+            quote! {
+                impl<'t, T: std::fmt::Display> DisplayMatch<T> for & Wrap<'t,T> {
+                    pub fn into_tag(&self) -> DisplayTag {
+                        DisplayTag
+                    }
+                }
+            },
+        ];
+
+        // Check for expected substrings to make test less brittle
+        let result_str = result.to_string();
+
+        for expected in expected_structs {
+            assert!(result_str.contains(&expected.to_string()));
+        }
+
+        for expected in expected_struct_impls {
+            assert!(result_str.contains(&expected.to_string()));
+        }
+
+        for expected in expected_traits {
+            assert!(result_str.contains(&expected.to_string()));
+        }
+
+        for expected in expected_trait_impls {
+            assert!(result_str.contains(&expected.to_string()));
+        }
+    }
+
+    #[test]
+    fn test_codegen() {
+        let idents = create_idents();
+        let paths = create_paths();
+        let traits = create_traits(&paths);
+        let ir = create_test_ir(&idents, &paths, &traits);
+
+        let result = codegen(ir);
+
+        // Just verify that the output contains expected important elements
+        let result_str = result.to_string();
+
+        assert!(result_str.contains(&quote! {pub struct Wrap}.to_string()));
+        assert!(result_str.contains(&quote! {pub trait Combined}.to_string()));
+        assert!(result_str.contains(&quote! {pub enum Dispatcher}.to_string()));
+        assert!(result_str.contains(&quote! {impl<'t> Dispatcher<'t>}.to_string()));
+        assert!(result_str.contains(&quote! {macro_rules! into}.to_string()));
+    }
 }

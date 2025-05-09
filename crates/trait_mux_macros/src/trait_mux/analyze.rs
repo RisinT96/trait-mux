@@ -154,9 +154,122 @@ fn generate_enum_variants<'t>(ast: &Ast, traits: &Vec<Trait<'t>>) -> Vec<EnumVar
         })
         .collect::<Vec<_>>();
 
-    // Sort by the length of implemented traits, then alphabetically.
-    variants.sort_by_key(|e| format!("{} {}", e.implemented_traits.len(), e.ident));
-    variants.reverse();
+    // Calculate how many characters (digits) are needed to represent the number of traits (n)
+    // Needed in case we have to zero pad for proper sorting.
+    // Not the most efficient but good enough, as n is not expected to be massive.
+    let n_chars = n.to_string().len();
+
+    // Sort by the length of implemented traits (descending), then alphabetically (ascending).
+    variants.sort_by_key(|e| {
+        format!(
+            "{:0width$} {}",
+            n - e.implemented_traits.len(),
+            e.ident,
+            width = n_chars
+        )
+    });
 
     variants
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use syn::{parse_quote, punctuated::Punctuated};
+
+    #[test]
+    fn test_generate_enum_variants_empty() {
+        // Test with no traits
+        let ast = Ast {
+            name: Ident::new("Test", Span::call_site()),
+            paths: Punctuated::new(),
+        };
+
+        let traits = extract_traits(&ast);
+        let variants = generate_enum_variants(&ast, &traits);
+
+        assert_eq!(variants.len(), 1);
+
+        assert_eq!(variants[0].ident.to_string(), "TestNone");
+        assert!(variants[0].implemented_traits.is_empty());
+    }
+
+    #[test]
+    fn test_generate_enum_variants_single_trait() {
+        // Test with a single trait
+        let ast = Ast {
+            name: Ident::new("Test", Span::call_site()),
+            paths: parse_quote!(Debug),
+        };
+
+        let traits = extract_traits(&ast);
+        let variants = generate_enum_variants(&ast, &traits);
+
+        assert_eq!(variants.len(), 2);
+
+        assert_eq!(variants[0].ident.to_string(), "TestDebug");
+        assert_eq!(variants[0].implemented_traits.len(), 1);
+
+        assert_eq!(variants[1].ident.to_string(), "TestNone");
+        assert!(variants[1].implemented_traits.is_empty());
+    }
+
+    #[test]
+    fn test_generate_enum_variants_multiple_traits() {
+        // Test with multiple traits
+        let ast = Ast {
+            name: Ident::new("Type", Span::call_site()),
+            paths: parse_quote!(Debug, Display, Clone),
+        };
+
+        let traits = extract_traits(&ast);
+        let variants = generate_enum_variants(&ast, &traits);
+
+        // Should have 2^3 = 8 variants
+        assert_eq!(variants.len(), 8);
+
+        // Check that sorting is done correctly - by trait count then alphabetically
+
+        let two_trait_variants = &variants[1..4];
+        let one_trait_variants = &variants[4..7];
+
+        // Check that variants with more traits come first
+        assert_eq!(variants[0].implemented_traits.len(), 3);
+        assert_eq!(variants[0].ident.to_string(), "TypeCloneDebugDisplay");
+
+        for v in two_trait_variants {
+            assert_eq!(v.implemented_traits.len(), 2);
+        }
+
+        for v in one_trait_variants {
+            assert_eq!(v.implemented_traits.len(), 1);
+        }
+
+        // Check that the empty variant comes last
+        assert_eq!(variants[7].ident.to_string(), "TypeNone");
+        assert!(variants[7].implemented_traits.is_empty());
+
+        // Check alphabetical order among same-length trait combinations
+        assert!(two_trait_variants[0].ident.to_string() <= two_trait_variants[1].ident.to_string());
+        assert!(two_trait_variants[1].ident.to_string() <= two_trait_variants[2].ident.to_string());
+
+        assert!(one_trait_variants[0].ident.to_string() <= one_trait_variants[1].ident.to_string());
+        assert!(one_trait_variants[1].ident.to_string() <= one_trait_variants[2].ident.to_string());
+    }
+
+    #[test]
+    fn test_extract_traits_sorting() {
+        // Test that traits are sorted alphabetically
+        let ast = Ast {
+            name: Ident::new("Test", Span::call_site()),
+            paths: parse_quote!(Zzz, Aaa, Mmm),
+        };
+
+        let traits = extract_traits(&ast);
+
+        assert_eq!(traits.len(), 3);
+        assert_eq!(traits[0].ident.to_string(), "Aaa");
+        assert_eq!(traits[1].ident.to_string(), "Mmm");
+        assert_eq!(traits[2].ident.to_string(), "Zzz");
+    }
 }
