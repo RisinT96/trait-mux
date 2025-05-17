@@ -45,17 +45,20 @@ pub fn codegen(ir: Ir) -> TokenStream {
     result.extend(generate_autoref_specializers(&ir));
 
     let into = &ir.into;
+    let inner_into = &ir.inner_into;
     let into_tag = &ir.into_tag;
     let refs = refs(ir.wrap_derefs);
     let wrap = &ir.wrap_ident;
 
     // Generate a helper macro to convert values into the enum
     result.extend(quote! {
-        macro_rules! #into {
+        #[macro_export]
+        macro_rules! #inner_into {
             ($var:tt) => {
                 (#refs #wrap(&$var)).#into_tag().#into(&$var)
             }
         }
+        pub use #inner_into as #into;
     });
 
     result
@@ -306,6 +309,7 @@ mod tests {
             wrap_ident: &idents["Wrap"],
             wrap_derefs: 1,
             into: Ident::new("into", Span::call_site()),
+            inner_into: Ident::new("__into", Span::call_site()),
             into_tag: Ident::new("into_tag", Span::call_site()),
             trait_aggregates: vec![TraitAggregate {
                 name: &idents["Combined"],
@@ -574,6 +578,7 @@ mod tests {
         assert!(result_str.contains(&quote! {pub trait Combined}.to_string()));
         assert!(result_str.contains(&quote! {pub enum Dispatcher}.to_string()));
         assert!(result_str.contains(&quote! {impl<'t> Dispatcher<'t>}.to_string()));
-        assert!(result_str.contains(&quote! {macro_rules! into}.to_string()));
+        assert!(result_str.contains(&quote! {macro_rules! __into}.to_string()));
+        assert!(result_str.contains(&quote! {pub use __into as into;}.to_string()));
     }
 }

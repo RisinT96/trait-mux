@@ -98,7 +98,9 @@ pub struct Ir<'t> {
     pub wrap_ident: &'t Ident,
     /// The number of dereference operations needed for the wrap macro.
     pub wrap_derefs: usize,
-    /// The identifier for the into function.
+    /// The identifier for the inner into macro.
+    pub inner_into: Ident,
+    /// The identifier for the into macro.
     pub into: Ident,
     /// The identifier for the into_tag function.
     pub into_tag: Ident,
@@ -130,6 +132,13 @@ pub fn lower<'t>(model: &'t Model<'t>) -> Ir<'t> {
         &format!("into_{}", model.enum_ident.to_string().to_case(Case::Snake)),
         Span::call_site(),
     );
+    let inner_into = Ident::new(
+        &format!(
+            "__into_{}",
+            model.enum_ident.to_string().to_case(Case::Snake)
+        ),
+        Span::call_site(),
+    );
 
     Ir {
         trait_aggregates,
@@ -138,8 +147,9 @@ pub fn lower<'t>(model: &'t Model<'t>) -> Ir<'t> {
         autoref_specializers,
         wrap_ident: &model.wrap_ident,
         wrap_derefs: model.traits.len() + 1,
-        into_tag,
+        inner_into,
         into,
+        into_tag,
     }
 }
 
