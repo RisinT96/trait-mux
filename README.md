@@ -16,7 +16,7 @@ Add this to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-trait_mux = "0.1.0"
+trait_mux = "0.2.0"
 ```
 
 ## Usage
